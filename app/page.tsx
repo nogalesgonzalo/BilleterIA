@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { Logo } from "@/components/Logo";
+
+export const dynamic = "force-dynamic";
 import {
   Sparkles,
   ArrowRight,
