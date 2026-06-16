@@ -190,10 +190,12 @@ export default function Home() {
   // 1. Verificar sesión de usuario, cargar datos y suscribirse a Supabase Realtime
   useEffect(() => {
     const supabase = createClient();
+    let isMounted = true;
     let channel: any = null;
 
     const checkUserAndSubscribe = async () => {
       const { data: { user }, error } = await supabase.auth.getUser();
+      if (!isMounted) return;
       if (error || !user) {
         window.location.href = "/auth/login";
         return;
@@ -219,6 +221,8 @@ export default function Home() {
 
         const { data, error: fetchError } = await query.order("fecha", { ascending: false });
 
+        if (!isMounted) return;
+
         if (fetchError) {
           console.error("Error al cargar transacciones de Supabase:", fetchError.message);
         } else if (data) {
@@ -231,16 +235,19 @@ export default function Home() {
       } catch (err) {
         console.error("Excepción en la carga de Supabase:", err);
       } finally {
-        setLoading(false);
+        if (isMounted) setLoading(false);
       }
 
       // Suscripción Realtime a cambios en la tabla 'transacciones'
+      // Usamos un ID único para el canal para evitar colisiones en Strict Mode
+      const channelId = `realtime-billeteria-${user.id}-${Math.random().toString(36).substring(2, 9)}`;
       channel = supabase
-        .channel("supabase-realtime-billeteria")
+        .channel(channelId)
         .on(
           "postgres_changes",
           { event: "*", schema: "public", table: "transacciones" },
           (payload: any) => {
+            if (!isMounted) return;
             const targetUserId = payload.new?.user_id || payload.old?.user_id;
             const isAlvaro = user.email === "alvaroortegagimenez@gmail.com";
             
@@ -280,6 +287,7 @@ export default function Home() {
     checkUserAndSubscribe();
 
     return () => {
+      isMounted = false;
       if (channel) {
         supabase.removeChannel(channel);
       }
