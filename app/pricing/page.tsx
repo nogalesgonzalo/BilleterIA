@@ -15,7 +15,7 @@ export default function PricingPage() {
   const faqs = [
     {
       q: "¿Cómo funciona el bot de Telegram?",
-      a: "Al suscribirte al Plan Pro, te damos acceso a @BilleterIA1_bot. Puedes enviarle notas de voz explicando tu gasto (ej. 'He pagado 12 euros por una hamburguesa') o texto plano. Nuestra IA procesa tu voz mediante Whisper de OpenAI, interpreta el concepto e importe y lo guarda directamente en tu base de datos de Supabase en milisegundos."
+      a: "Al suscribirte al Plan Pro, te damos acceso a @BilleterIA2_bot. Puedes enviarle notas de voz explicando tu gasto (ej. 'He pagado 12 euros por una hamburguesa') o texto plano. Nuestra IA procesa tu voz mediante Whisper de OpenAI, interpreta el concepto e importe y lo guarda directamente en tu base de datos de Supabase en milisegundos."
     },
     {
       q: "¿Qué es el escenario de Make.com?",
@@ -39,12 +39,12 @@ export default function PricingPage() {
 
       {/* Header Sticky Navigation */}
       <header className="fixed top-0 w-full z-50 bg-[#0b1326]/60 backdrop-blur-xl border-b border-white/10 px-6 md:px-12 py-4 flex justify-between items-center">
-        <div className="flex items-center gap-3">
+        <Link href="/" className="flex items-center gap-3 hover:opacity-85 transition-opacity">
           <Logo size={36} />
           <span className="font-sans font-bold text-lg tracking-tight text-white flex items-center select-none">
             Billeter<span className="text-[#4edea3]">IA</span>
           </span>
-        </div>
+        </Link>
         <nav className="hidden md:flex items-center gap-8">
           <Link href="/" className="text-[#bbcabf] hover:text-white transition-colors text-sm font-medium">Plataforma</Link>
           <span className="text-white transition-colors text-sm font-bold border-b-2 border-[#4edea3] pb-1">Precios</span>
@@ -151,7 +151,7 @@ export default function PricingPage() {
               </li>
               <li className="flex items-start gap-3">
                 <Check className="w-4.5 h-4.5 text-[#4edea3] shrink-0 mt-0.5" />
-                <span>Acceso exclusivo a @BilleterIA1_bot de Telegram</span>
+                <span>Acceso exclusivo a @BilleterIA2_bot de Telegram</span>
               </li>
               <li className="flex items-start gap-3">
                 <Check className="w-4.5 h-4.5 text-[#4edea3] shrink-0 mt-0.5" />
@@ -195,7 +195,7 @@ export default function PricingPage() {
             <div className="grid grid-cols-3 p-4 border-b border-white/5 items-center">
               <div className="font-semibold text-white">Canal Telegram</div>
               <div className="text-center text-red-500/70">—</div>
-              <div className="text-center text-emerald-400 font-bold">Sí (@BilleterIA1_bot)</div>
+              <div className="text-center text-emerald-400 font-bold">Sí (@BilleterIA2_bot)</div>
             </div>
             <div className="grid grid-cols-3 p-4 border-b border-white/5 items-center">
               <div className="font-semibold text-white">Notas de Voz</div>

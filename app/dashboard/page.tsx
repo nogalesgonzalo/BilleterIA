@@ -7,7 +7,7 @@ import { Logo } from "@/components/Logo";
 import { GaugesPanel } from "@/components/GaugesPanel";
 import { CollapsibleTopes } from "@/components/CollapsibleTopes";
 import { InteligenciaAlertas } from "@/components/InteligenciaAlertas";
-import { CalculadoraInteres } from "@/components/CalculadoraInteres";
+import { AnalyticsPanel } from "@/components/AnalyticsPanel";
 import { MovimientosRecent } from "@/components/MovimientosRecent";
 import { SupabaseConnector } from "@/components/SupabaseConnector";
 import { IAProactiva } from "@/components/IAProactiva";
@@ -16,6 +16,7 @@ import { Transaccion } from "@/lib/types";
 
 // Movimientos iniciales por defecto (Baseline) para pruebas rápidas
 const baselineTransactions: Transaccion[] = [
+  // Junio 2026 (Mes Actual)
   {
     id: "tx-nomina-1",
     fecha: "2026-06-01",
@@ -66,6 +67,61 @@ const baselineTransactions: Transaccion[] = [
     fecha: "2026-06-06",
     monto: 400,
     concepto: "Inversión ETF MSCI World Acc",
+    tipo: "inversión",
+    categoria: "Inversión",
+    canal: "Telegram",
+  },
+  // Mayo 2026 (Mes Anterior - Comparativa)
+  {
+    id: "tx-nomina-may",
+    fecha: "2026-05-01",
+    monto: 2500,
+    concepto: "Nómina Mensual de Ingeniería",
+    tipo: "ingreso",
+    categoria: "Salario",
+    canal: "Sistema",
+  },
+  {
+    id: "tx-alquiler-may",
+    fecha: "2026-05-02",
+    monto: -850,
+    concepto: "Alquiler Piso Principal",
+    tipo: "gasto fijo",
+    categoria: "Hogar",
+    canal: "Sistema",
+  },
+  {
+    id: "tx-luz-may",
+    fecha: "2026-05-03",
+    monto: -110,
+    concepto: "Suministro Luz Wifi (Mayo)",
+    tipo: "gasto fijo",
+    categoria: "Hogar",
+    canal: "Sistema",
+  },
+  {
+    id: "tx-compra-may",
+    fecha: "2026-05-04",
+    monto: -290,
+    concepto: "Supermercado y Compras Mayo",
+    tipo: "gasto variable",
+    categoria: "Alimentación",
+    canal: "Web",
+  },
+  {
+    id: "tx-ahorro-may",
+    fecha: "2026-05-05",
+    monto: 150,
+    concepto: "Traspaso Hucha Ahorro (Mayo)",
+    tipo: "ahorro",
+    categoria: "Ahorro",
+    canal: "Sistema",
+  },
+  {
+    id: "tx-invertir-may",
+    fecha: "2026-05-06",
+    monto: 250,
+    concepto: "Aporte ETF MSCI (Mayo)",
     tipo: "inversión",
     categoria: "Inversión",
     canal: "Telegram",
@@ -392,16 +448,6 @@ export default function Home() {
           <button onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })} className="text-[#4edea3] font-bold font-label-md text-label-md transition-all duration-200 cursor-pointer bg-transparent border-none outline-none">Dashboard</button>
           <button onClick={() => document.getElementById("interes-calculadora-panel")?.scrollIntoView({ behavior: "smooth" })} className="text-[#bbcabf] hover:text-[#4edea3] transition-colors duration-300 font-label-md text-label-md cursor-pointer bg-transparent border-none outline-none">Analytics</button>
           <button onClick={() => document.getElementById("collapsible-topes-container")?.scrollIntoView({ behavior: "smooth" })} className="text-[#bbcabf] hover:text-[#4edea3] transition-colors duration-300 font-label-md text-label-md cursor-pointer bg-transparent border-none outline-none">Budgets</button>
-          <div className="relative group">
-            <input 
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="bg-[#222a3d]/50 border border-white/10 rounded-full py-1.5 px-4 text-sm focus:ring-1 focus:ring-[#4edea3] focus:border-[#4edea3] transition-all outline-none w-48 focus:w-64 font-body-md" 
-              placeholder="Buscar movimientos..." 
-              type="text"
-            />
-            <span className="material-symbols-outlined absolute right-3 top-1.5 text-[#bbcabf] scale-75">search</span>
-          </div>
         </div>
         <div className="flex items-center gap-4">
           <button 
@@ -497,7 +543,7 @@ export default function Home() {
                 </span>
               </div>
               <p className="text-sm text-[#bbcabf] mt-1 max-w-xl">
-                Dicta una nota de voz o escribe un mensaje rápido a tu bot <strong className="text-[#4edea3]">@BilleterIA1_bot</strong>. La IA procesará, analizará y registrará el movimiento automáticamente.
+                Dicta una nota de voz o escribe un mensaje rápido a tu bot <strong className="text-[#4edea3]">@BilleterIA2_bot</strong>. La IA procesará, analizará y registrará el movimiento automáticamente.
               </p>
               <div className="flex justify-center sm:justify-start gap-4 mt-2 text-xs text-[#bbcabf]/70 font-mono">
                 <span className="flex items-center gap-1">
@@ -516,7 +562,7 @@ export default function Home() {
           <div className="flex flex-col sm:flex-row items-center gap-4 z-10 shrink-0 w-full sm:w-auto">
             {/* The main "+" button linking to Telegram */}
             <a 
-              href="https://t.me/BilleterIA1_bot"
+              href="https://t.me/BilleterIA2_bot"
               target="_blank"
               rel="noopener noreferrer"
               className="flex-1 sm:flex-none cta-gradient hover:shadow-[0_0_30px_rgba(78,222,163,0.4)] text-[#003824] font-extrabold text-md px-8 py-4 rounded-2xl flex items-center justify-center gap-3 active:scale-95 transition-all duration-200 cursor-pointer no-underline group/btn border-none"
@@ -564,8 +610,24 @@ export default function Home() {
           onAddTransaccion={handleAddTransaccion}
         />
 
+        {/* Analytics Section */}
+        <AnalyticsPanel
+          transacciones={transacciones}
+          totalAhorros={totalAhorros}
+          totalInversiones={totalInversiones}
+        />
+
         {/* IA Proactiva */}
-        <IAProactiva />
+        <IAProactiva 
+          transacciones={transacciones}
+          dineroLiquido={dineroLiquido}
+          totalAhorros={totalAhorros}
+          totalInversiones={totalInversiones}
+          totalGastosFijos={totalGastosFijos}
+          totalGastosVariables={totalGastosVariables}
+          topeFijo={topeFijo}
+          topeVariable={topeVariable}
+        />
 
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
           {/* Budgets Section */}
@@ -580,24 +642,18 @@ export default function Home() {
             />
           </div>
 
-          {/* Calculator Section */}
+          {/* Transactions Section */}
           <div className="xl:col-span-2">
-            <CalculadoraInteres
-              totalAhorros={totalAhorros}
-              totalInversiones={totalInversiones}
+            <MovimientosRecent
+              transacciones={transacciones}
+              onAddTransaccion={handleAddTransaccion}
+              onDeleteTransaccion={handleDeleteTransaccion}
+              onResetToBaseline={handleResetToBaseline}
+              searchQuery={searchQuery}
+              onAddClick={() => setShowAddModal(true)}
             />
           </div>
         </div>
-
-        {/* Transactions Section */}
-        <MovimientosRecent
-          transacciones={transacciones}
-          onAddTransaccion={handleAddTransaccion}
-          onDeleteTransaccion={handleDeleteTransaccion}
-          onResetToBaseline={handleResetToBaseline}
-          searchQuery={searchQuery}
-          onAddClick={() => setShowAddModal(true)}
-        />
       </main>
 
       {/* Bottom Nav for Mobile */}

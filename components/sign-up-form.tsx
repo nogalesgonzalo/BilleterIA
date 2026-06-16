@@ -55,7 +55,9 @@ export function SignUpForm({
       
       <div className="mb-6 text-center z-10 relative">
         <div className="flex justify-center mb-3">
-          <Logo size={44} />
+          <Link href="/" title="Volver al inicio" className="hover:opacity-85 transition-opacity">
+            <Logo size={44} />
+          </Link>
         </div>
         <h2 className="text-2xl font-bold text-white tracking-tight">Crear Cuenta</h2>
         <p className="text-xs text-[#bbcabf]/60 mt-1">Regístrate en BilleterIA para sincronizar tus finanzas</p>
