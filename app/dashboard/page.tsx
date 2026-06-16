@@ -13,6 +13,7 @@ import { SupabaseConnector } from "@/components/SupabaseConnector";
 import { IAProactiva } from "@/components/IAProactiva";
 import { getSupabaseConfig, getSupabase } from "@/lib/supabase";
 import { Transaccion } from "@/lib/types";
+import { createClient } from "@/lib/supabase/client";
 
 // Movimientos iniciales por defecto (Baseline) para pruebas rápidas
 const baselineTransactions: Transaccion[] = [
@@ -129,6 +130,7 @@ const baselineTransactions: Transaccion[] = [
 ];
 
 export default function Home() {
+  const [currentUser, setCurrentUser] = useState<any>(null);
   const [transacciones, setTransacciones] = useState<Transaccion[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -185,50 +187,41 @@ export default function Home() {
     setShowAddModal(false);
   };
 
-  // 1. Cargar datos iniciales desde localStorage al montar el componente
+  // 1. Verificar sesión de usuario, cargar datos y suscribirse a Supabase Realtime
   useEffect(() => {
-    const savedTransacciones = localStorage.getItem("billeteria_transacciones");
-    if (savedTransacciones) {
-      try {
-        setTransacciones(JSON.parse(savedTransacciones));
-      } catch (e) {
-        console.error("Error al leer transacciones guardadas", e);
-        setTransacciones(baselineTransactions);
+    const supabase = createClient();
+    let channel: any = null;
+
+    const checkUserAndSubscribe = async () => {
+      const { data: { user }, error } = await supabase.auth.getUser();
+      if (error || !user) {
+        window.location.href = "/auth/login";
+        return;
       }
-    } else {
-      setTransacciones(baselineTransactions);
-    }
+      setCurrentUser(user);
+      setSupabaseConnected(true);
 
-    const savedTopeFijo = localStorage.getItem("billeteria_tope_fijo");
-    if (savedTopeFijo) setTopeFijo(Number(savedTopeFijo));
+      const savedTopeFijo = localStorage.getItem("billeteria_tope_fijo");
+      if (savedTopeFijo) setTopeFijo(Number(savedTopeFijo));
 
-    const savedTopeVariable = localStorage.getItem("billeteria_tope_variable");
-    if (savedTopeVariable) setTopeVariable(Number(savedTopeVariable));
+      const savedTopeVariable = localStorage.getItem("billeteria_tope_variable");
+      if (savedTopeVariable) setTopeVariable(Number(savedTopeVariable));
 
-    setLoading(false);
-  }, []);
-
-  // 2. Sincronizar datos y suscribirse a Supabase Realtime si está configurado
-  useEffect(() => {
-    const supabase = getSupabase();
-    if (!supabase) {
-      setSupabaseConnected(false);
-      return;
-    }
-
-    setSupabaseConnected(true);
-
-    const loadDataFromSupabase = async () => {
       try {
-        const { data, error } = await supabase
-          .from("transacciones")
-          .select("*")
-          .order("fecha", { ascending: false });
+        let query = supabase.from("transacciones").select("*");
+        
+        // Si es Álvaro, cargar sus transacciones o las que no tengan user_id (Telegram)
+        if (user.email === "alvaroortegagimenez@gmail.com") {
+          query = query.or(`user_id.eq.${user.id},user_id.is.null`);
+        } else {
+          query = query.eq("user_id", user.id);
+        }
 
-        if (error) {
-          console.error("Error al cargar transacciones de Supabase:", error.message);
+        const { data, error: fetchError } = await query.order("fecha", { ascending: false });
+
+        if (fetchError) {
+          console.error("Error al cargar transacciones de Supabase:", fetchError.message);
         } else if (data) {
-          // Normalizar montos por si acaso vienen como string de la base de datos
           const normalized = data.map((t: any) => ({
             ...t,
             monto: Number(t.monto)
@@ -237,55 +230,63 @@ export default function Home() {
         }
       } catch (err) {
         console.error("Excepción en la carga de Supabase:", err);
+      } finally {
+        setLoading(false);
       }
+
+      // Suscripción Realtime a cambios en la tabla 'transacciones'
+      channel = supabase
+        .channel("supabase-realtime-billeteria")
+        .on(
+          "postgres_changes",
+          { event: "*", schema: "public", table: "transacciones" },
+          (payload: any) => {
+            const targetUserId = payload.new?.user_id || payload.old?.user_id;
+            const isAlvaro = user.email === "alvaroortegagimenez@gmail.com";
+            
+            // Acceso: Álvaro ve propios + nulos; otros solo propios
+            const hasAccess = isAlvaro
+              ? (!targetUserId || targetUserId === user.id)
+              : (targetUserId === user.id);
+
+            if (!hasAccess) return;
+
+            if (payload.eventType === "INSERT") {
+              const inserted: Transaccion = {
+                ...payload.new,
+                monto: Number(payload.new.monto)
+              };
+              setTransacciones((prev) => {
+                if (prev.some((t) => t.id === inserted.id)) return prev;
+                return [inserted, ...prev];
+              });
+            } else if (payload.eventType === "DELETE") {
+              const deletedId = payload.old.id;
+              setTransacciones((prev) => prev.filter((t) => t.id !== deletedId));
+            } else if (payload.eventType === "UPDATE") {
+              const updated: Transaccion = {
+                ...payload.new,
+                monto: Number(payload.new.monto)
+              };
+              setTransacciones((prev) =>
+                prev.map((t) => (t.id === updated.id ? updated : t))
+              );
+            }
+          }
+        )
+        .subscribe();
     };
 
-    loadDataFromSupabase();
-
-    // Suscripción Realtime a cambios en la tabla 'transacciones'
-    const channel = supabase
-      .channel("supabase-realtime-billeteria")
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "transacciones" },
-        (payload: any) => {
-          if (payload.eventType === "INSERT") {
-            const inserted: Transaccion = {
-              ...payload.new,
-              monto: Number(payload.new.monto)
-            };
-            setTransacciones((prev) => {
-              if (prev.some((t) => t.id === inserted.id)) return prev;
-              return [inserted, ...prev];
-            });
-          } else if (payload.eventType === "DELETE") {
-            const deletedId = payload.old.id;
-            setTransacciones((prev) => prev.filter((t) => t.id !== deletedId));
-          } else if (payload.eventType === "UPDATE") {
-            const updated: Transaccion = {
-              ...payload.new,
-              monto: Number(payload.new.monto)
-            };
-            setTransacciones((prev) =>
-              prev.map((t) => (t.id === updated.id ? updated : t))
-            );
-          }
-        }
-      )
-      .subscribe();
+    checkUserAndSubscribe();
 
     return () => {
-      supabase.removeChannel(channel);
+      if (channel) {
+        supabase.removeChannel(channel);
+      }
     };
-  }, [supabaseConnected]);
+  }, []);
 
-  // 3. Guardar cambios locales en localStorage
-  useEffect(() => {
-    if (!loading && transacciones.length > 0) {
-      localStorage.setItem("billeteria_transacciones", JSON.stringify(transacciones));
-    }
-  }, [transacciones, loading]);
-
+  // 2. Guardar cambios de límites locales
   useEffect(() => {
     localStorage.setItem("billeteria_tope_fijo", String(topeFijo));
   }, [topeFijo]);
@@ -294,12 +295,11 @@ export default function Home() {
     localStorage.setItem("billeteria_tope_variable", String(topeVariable));
   }, [topeVariable]);
 
-  // 4. Motores de Cálculo Patrimonial
+  // 3. Motores de Cálculo Patrimonial
   const totalIngresos = transacciones
     .filter((t) => t.tipo === "ingreso")
     .reduce((sum, t) => sum + t.monto, 0);
 
-  // Considerar tanto 'gasto' como 'gasto fijo'
   const totalGastosFijos = transacciones
     .filter((t) => t.tipo === "gasto fijo")
     .reduce((sum, t) => sum + t.monto, 0);
@@ -316,92 +316,84 @@ export default function Home() {
     .filter((t) => t.tipo === "inversión")
     .reduce((sum, t) => sum + t.monto, 0);
 
-  // Dinero Líquido = Ingresos Totales - (Gastos Fijos + Gastos Variables) - (Ahorros + Inversiones)
-  // Nota: Gastos Fijos y Variables ya vienen con signo negativo en base de datos.
   const dineroLiquido = totalIngresos + (totalGastosFijos + totalGastosVariables) - (totalAhorros + totalInversiones);
   const patrimonioTotal = dineroLiquido + totalAhorros + totalInversiones;
 
-  // 5. Manejadores de Eventos
+  // 4. Manejadores de Eventos
   const handleAddTransaccion = async (newTx: Omit<Transaccion, "id" | "fecha">) => {
-    const fresh: Transaccion = {
+    if (!currentUser) return;
+    const fresh: any = {
       ...newTx,
       id: "tx-" + Date.now() + "-" + Math.floor(Math.random() * 100),
       fecha: new Date().toISOString().split("T")[0],
+      user_id: currentUser.id
     };
 
-    const supabase = getSupabase();
-    if (supabase) {
-      try {
-        const { error } = await supabase
-          .from("transacciones")
-          .insert([fresh]);
-        if (error) {
-          console.error("Error al escribir en Supabase, guardando en local:", error);
-          setTransacciones((prev) => [fresh, ...prev]);
-        }
-        // Nota: Realtime actualizará el estado automáticamente si se insertó con éxito
-      } catch (err) {
-        console.error("Problema de red con Supabase, guardando en local:", err);
+    const supabase = createClient();
+    try {
+      const { error } = await supabase
+        .from("transacciones")
+        .insert([fresh]);
+      if (error) {
+        console.error("Error al escribir en Supabase, guardando en local:", error);
         setTransacciones((prev) => [fresh, ...prev]);
       }
-    } else {
+    } catch (err) {
+      console.error("Problema de red con Supabase, guardando en local:", err);
       setTransacciones((prev) => [fresh, ...prev]);
     }
   };
 
   const handleDeleteTransaccion = async (id: string) => {
-    const supabase = getSupabase();
-    if (supabase) {
-      try {
-        const { error } = await supabase
-          .from("transacciones")
-          .delete()
-          .eq("id", id);
-        if (error) {
-          console.error("Error al borrar en Supabase:", error);
-          setTransacciones((prev) => prev.filter((t) => t.id !== id));
-        }
-        // Nota: Realtime actualizará el estado automáticamente si se borró con éxito
-      } catch (err) {
-        console.error("Error de red al borrar en Supabase:", err);
+    const supabase = createClient();
+    try {
+      const { error } = await supabase
+        .from("transacciones")
+        .delete()
+        .eq("id", id);
+      if (error) {
+        console.error("Error al borrar en Supabase:", error);
         setTransacciones((prev) => prev.filter((t) => t.id !== id));
       }
-    } else {
+    } catch (err) {
+      console.error("Error de red al borrar en Supabase:", err);
       setTransacciones((prev) => prev.filter((t) => t.id !== id));
     }
   };
 
   const handleResetToBaseline = async () => {
-    const supabase = getSupabase();
-    if (supabase) {
-      const confirmAction = window.confirm("¿Deseas restaurar la base de datos de Supabase con los movimientos baseline por defecto?");
+    const supabase = createClient();
+    if (supabase && currentUser) {
+      const confirmAction = window.confirm("¿Deseas restaurar la base de datos de Supabase con los movimientos baseline por defecto para tu usuario?");
       if (!confirmAction) return;
 
       try {
-        // Borrar registros existentes
-        await supabase
-          .from("transacciones")
-          .delete()
-          .not("id", "eq", "");
+        // Borrar registros existentes del usuario (y nulos si es Álvaro)
+        let deleteQuery = supabase.from("transacciones").delete();
+        if (currentUser.email === "alvaroortegagimenez@gmail.com") {
+          deleteQuery = deleteQuery.or(`user_id.eq.${currentUser.id},user_id.is.null`);
+        } else {
+          deleteQuery = deleteQuery.eq("user_id", currentUser.id);
+        }
+        await deleteQuery;
         
-        // Insertar los baseline
+        // Insertar los baseline con su user_id
+        const baselineWithUser = baselineTransactions.map(t => ({
+          ...t,
+          user_id: currentUser.id
+        }));
+
         const { error } = await supabase
           .from("transacciones")
-          .insert(baselineTransactions);
+          .insert(baselineWithUser);
 
         if (error) {
           alert(`Error al resetear en Supabase: ${error.message}`);
         } else {
-          setTransacciones(baselineTransactions);
+          setTransacciones(baselineWithUser);
         }
       } catch (err) {
         console.error("Excepción en el reset a baseline:", err);
-      }
-    } else {
-      const confirmAction = window.confirm("¿Deseas restaurar el estado local con los movimientos por defecto?");
-      if (confirmAction) {
-        setTransacciones(baselineTransactions);
-        localStorage.setItem("billeteria_transacciones", JSON.stringify(baselineTransactions));
       }
     }
   };
@@ -416,12 +408,8 @@ export default function Home() {
   };
 
   const handleLogout = async () => {
-    const supabase = getSupabase();
-    if (supabase) {
-      await supabase.auth.signOut();
-    }
-    localStorage.removeItem("billeteria_supabase_url");
-    localStorage.removeItem("billeteria_supabase_anon_key");
+    const supabase = createClient();
+    await supabase.auth.signOut();
     window.location.href = "/";
   };
 
@@ -466,8 +454,10 @@ export default function Home() {
           <button onClick={() => setShowConnector(!showConnector)} className="material-symbols-outlined text-[#bbcabf] hover:text-[#4edea3] transition-all active:scale-95 cursor-pointer bg-transparent border-none outline-none">settings</button>
           <div className="flex items-center gap-2.5">
             <div className="hidden lg:flex flex-col text-right">
-              <span className="text-xs text-white font-medium font-sans">Álvaro Ortega</span>
-              <span className="text-[9px] text-[#bbcabf] font-mono">alvaroortegagimenez@gmail.com</span>
+              <span className="text-xs text-white font-medium font-sans">
+                {currentUser?.email === "alvaroortegagimenez@gmail.com" ? "Álvaro Ortega" : (currentUser?.email?.split('@')[0] || "Usuario")}
+              </span>
+              <span className="text-[9px] text-[#bbcabf] font-mono">{currentUser?.email}</span>
             </div>
             <div className="w-10 h-10 rounded-full overflow-hidden border border-[#4edea3]/20 p-0.5">
               <img alt="User Profile" className="w-full h-full object-cover rounded-full" src="https://lh3.googleusercontent.com/aida-public/AB6AXuA3DGAD9Iik_89igSf_o3_6ygfJUWZKRSiDSxV98nnNWBouDDzuSOzZBVwonDTFv0DbMbNj_K-fEYImg4aCaAPRFQ0kxhQy_udDq8l-QKTL-anLma7oYuB9Y2K_F2krwV4cLjD8KzTZ6xCzz5o99tLIr2sGEqaCtrDH05WWxmn29AYKpgFQOHGx2R2nyCDjoOoBS4IiTaETK1_tvvyRtg7LWtAJmmi51-UHmbOdB6hOoVMrLejpw3seBrBcKlWIPPle4EDjDyYCbypD"/>
