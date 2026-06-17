@@ -11,6 +11,7 @@ import { AnalyticsPanel } from "@/components/AnalyticsPanel";
 import { MovimientosRecent } from "@/components/MovimientosRecent";
 import { SupabaseConnector } from "@/components/SupabaseConnector";
 import { IAProactiva } from "@/components/IAProactiva";
+import { FloatingChatbot } from "@/components/FloatingChatbot";
 import { getSupabaseConfig, getSupabase } from "@/lib/supabase";
 import { Transaccion } from "@/lib/types";
 import { createClient } from "@/lib/supabase/client";
@@ -759,6 +760,19 @@ export default function Home() {
           </div>
         </div>
       )}
+
+      {/* Floating AI Chatbot */}
+      <FloatingChatbot
+        transacciones={transacciones}
+        dineroLiquido={dineroLiquido}
+        totalAhorros={totalAhorros}
+        totalInversiones={totalInversiones}
+        totalGastosFijos={totalGastosFijos}
+        totalGastosVariables={totalGastosVariables}
+        topeFijo={topeFijo}
+        topeVariable={topeVariable}
+        onAddTransaccion={handleAddTransaccion}
+      />
     </div>
   );
 }

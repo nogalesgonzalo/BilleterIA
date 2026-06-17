@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { Logo } from "@/components/Logo";
 
 export const dynamic = "force-dynamic";
+
 import {
   Sparkles,
   ArrowRight,
@@ -24,10 +25,19 @@ export default async function Home() {
   let user: any = null;
   try {
     const supabase = await createClient();
-    const { data } = await supabase.auth.getClaims();
-    user = data?.claims;
+    // Timeout de 1s para no bloquear la landing si Supabase no es accesible
+    const result = await Promise.race([
+      supabase.auth.getUser(),
+      new Promise<null>((_, reject) =>
+        setTimeout(() => reject(new Error("Supabase timeout")), 1000)
+      ),
+    ]);
+    if (result && typeof result === "object" && "data" in result) {
+      user = (result as any).data?.user ?? null;
+    }
   } catch (error) {
-    console.error("Error al obtener la sesión de Supabase en la Landing Page:", error);
+    // Si Supabase no responde o no está configurado, se muestra la landing sin sesión
+    console.warn("Supabase no disponible en la Landing Page:", (error as Error).message);
   }
 
   return (
