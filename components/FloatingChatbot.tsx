@@ -14,7 +14,9 @@ import {
   AlertCircle,
   HelpCircle,
   TrendingUp,
-  Brain
+  Brain,
+  Mic,
+  MicOff
 } from "lucide-react";
 
 interface FloatingChatbotProps {
@@ -38,6 +40,9 @@ interface Message {
   proposalStatus?: "pending" | "confirmed" | "cancelled";
 }
 
+// Proxy server-side para el webhook de Make (evita CORS en producción)
+const MAKE_WEBHOOK_URL = "/api/make-webhook";
+
 export function FloatingChatbot({
   transacciones,
   dineroLiquido,
@@ -55,11 +60,94 @@ export function FloatingChatbot({
     {
       id: "welcome",
       sender: "bot",
-      text: "👋 ¡Hola, Álvaro! Soy tu asistente financiero BilleterIA. \n\nPuedes dictarme o escribirme gastos (ej. *'He pagado 15€ en el super'*) y los registraré por ti, o bien preguntarme dudas sobre tu patrimonio."
+      text: "👋 ¡Hola! Soy tu asistente financiero BilleterIA. \n\nPuedes escribirme gastos (ej. *'He pagado 15€ en el super'*) y los registraré por ti, o hacerme preguntas sobre tus finanzas."
     }
   ]);
   const [isLoading, setIsLoading] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
+
+  // Reconocimiento de voz (Speech Recognition)
+  const [recognitionSupported, setRecognitionSupported] = useState(false);
+  const [isListening, setIsListening] = useState(false);
+  const recognitionRef = useRef<any>(null);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      if (SpeechRecognition) {
+        setRecognitionSupported(true);
+      }
+    }
+  }, []);
+
+  const startListening = () => {
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) return;
+
+    try {
+      if (recognitionRef.current) {
+        recognitionRef.current.abort();
+      }
+
+      const recognition = new SpeechRecognition();
+      recognition.lang = "es-ES";
+      recognition.continuous = false;
+      recognition.interimResults = false;
+      recognition.maxAlternatives = 1;
+
+      recognition.onstart = () => {
+        setIsListening(true);
+      };
+
+      recognition.onresult = (event: any) => {
+        const transcript = event.results[0][0].transcript;
+        if (transcript && transcript.trim()) {
+          handleSendMessage(undefined, transcript);
+        }
+      };
+
+      recognition.onerror = (event: any) => {
+        console.error("Speech recognition error:", event);
+        setIsListening(false);
+      };
+
+      recognition.onend = () => {
+        setIsListening(false);
+      };
+
+      recognitionRef.current = recognition;
+      recognition.start();
+    } catch (err) {
+      console.error("Failed to start speech recognition:", err);
+      setIsListening(false);
+    }
+  };
+
+  const stopListening = () => {
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.stop();
+      } catch (err) {
+        console.error("Error stopping recognition:", err);
+      }
+    }
+    setIsListening(false);
+  };
+
+  const toggleListening = () => {
+    if (isListening) {
+      stopListening();
+    } else {
+      startListening();
+    }
+  };
+
+  // Detener escucha si se cierra el chat
+  useEffect(() => {
+    if (!isOpen && isListening) {
+      stopListening();
+    }
+  }, [isOpen, isListening]);
 
   // Auto-scroll to bottom
   useEffect(() => {
@@ -68,18 +156,18 @@ export function FloatingChatbot({
     }
   }, [messages, isLoading, isOpen]);
 
-  const handleSendMessage = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!chatInput.trim() || isLoading) return;
+  const handleSendMessage = async (e?: React.FormEvent, textOverride?: string) => {
+    if (e) e.preventDefault();
+    const userText = textOverride ? textOverride.trim() : chatInput.trim();
+    if (!userText || isLoading) return;
 
-    const userText = chatInput.trim();
     const userMsgId = `user-${Date.now()}`;
     setMessages((prev) => [...prev, { id: userMsgId, sender: "user", text: userText }]);
     setChatInput("");
     setIsLoading(true);
 
     try {
-      // Intentar primero parsear como transacción
+      // 1. Intentar primero parsear como transacción
       const parseResponse = await fetch("/api/parse-transaction", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -106,32 +194,54 @@ export function FloatingChatbot({
         return;
       }
 
-      // Si no es una transacción obvia, pedir asesoramiento financiero
-      const adviceResponse = await fetch("/api/financial-advice", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          pregunta: userText,
-          transacciones,
-          dineroLiquido,
-          totalAhorros,
-          totalInversiones,
-          totalGastosFijos,
-          totalGastosVariables,
-          topeFijo,
-          topeVariable
-        })
-      });
+      // 2. Si no es transacción, enviar consulta al webhook de Make
+      const financialContext = {
+        pregunta: userText,
+        dineroLiquido,
+        totalAhorros,
+        totalInversiones,
+        totalGastosFijos,
+        totalGastosVariables,
+        topeFijo,
+        topeVariable,
+        ultimosMovimientos: (transacciones || []).slice(0, 10)
+      };
 
-      if (!adviceResponse.ok) throw new Error("Error calling advice API");
-      const adviceData = await adviceResponse.json();
+      let botReply = "";
+
+      try {
+        const makeResponse = await fetch(MAKE_WEBHOOK_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(financialContext)
+        });
+
+        if (makeResponse.ok) {
+          const makeData = await makeResponse.json();
+          // Make puede devolver la respuesta en distintos campos
+          botReply = makeData.response || makeData.answer || makeData.message || makeData.text || makeData.advice || JSON.stringify(makeData);
+        } else {
+          throw new Error(`Make webhook responded with status ${makeResponse.status}`);
+        }
+      } catch (makeErr) {
+        console.warn("Make webhook no disponible, usando fallback local:", makeErr);
+        // Fallback: usar la API local de financial-advice
+        const adviceResponse = await fetch("/api/financial-advice", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(financialContext)
+        });
+        if (!adviceResponse.ok) throw new Error("Error calling advice API");
+        const adviceData = await adviceResponse.json();
+        botReply = adviceData.advice;
+      }
 
       setMessages((prev) => [
         ...prev,
         {
           id: `bot-advice-${Date.now()}`,
           sender: "bot",
-          text: adviceData.advice
+          text: botReply
         }
       ]);
 
@@ -316,18 +426,40 @@ export function FloatingChatbot({
           </div>
 
           {/* Formulario de Input */}
-          <form onSubmit={handleSendMessage} className="p-3 bg-[#131b2e] border-t border-white/5 flex gap-2">
+          <form 
+            onSubmit={(e) => handleSendMessage(e)} 
+            className="p-3 bg-[#131b2e] border-t border-white/5 flex gap-2"
+          >
             <input
               type="text"
               value={chatInput}
               onChange={(e) => setChatInput(e.target.value)}
-              placeholder="Escribe 'gaste 15€ en cena' o haz una consulta..."
-              disabled={isLoading}
+              placeholder={isListening ? "Escuchando... habla ahora 🎙️" : "Escribe 'gaste 15€ en cena' o haz una consulta..."}
+              disabled={isLoading || isListening}
               className="flex-1 bg-[#060e20]/60 border border-white/10 focus:border-[#4edea3] focus:ring-1 focus:ring-[#4edea3] rounded-xl py-2 px-3 text-xs text-[#dae2fd] placeholder:text-slate-600 outline-none transition-colors"
             />
+            {recognitionSupported && (
+              <button
+                type="button"
+                onClick={toggleListening}
+                disabled={isLoading}
+                className={`p-2 rounded-xl transition-all cursor-pointer flex items-center justify-center border outline-none ${
+                  isListening
+                    ? "bg-red-500/20 border-red-500/40 text-red-400 animate-pulse hover:bg-red-500/30"
+                    : "bg-[#060e20]/60 border-white/10 text-[#bbcabf] hover:text-[#4edea3] hover:border-[#4edea3]/40"
+                } disabled:opacity-50 disabled:cursor-not-allowed`}
+                title={isListening ? "Escuchando... Haz clic para detener" : "Escuchar voz"}
+              >
+                {isListening ? (
+                  <MicOff className="w-3.5 h-3.5 text-red-400" />
+                ) : (
+                  <Mic className="w-3.5 h-3.5" />
+                )}
+              </button>
+            )}
             <button
               type="submit"
-              disabled={isLoading || !chatInput.trim()}
+              disabled={isLoading || isListening || !chatInput.trim()}
               className="bg-[#4edea3] hover:bg-[#3ec48e] text-[#002113] p-2 rounded-xl transition-all cursor-pointer flex items-center justify-center border-none outline-none disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Send className="w-3.5 h-3.5 font-bold" />

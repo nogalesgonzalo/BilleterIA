@@ -12,6 +12,8 @@ import { MovimientosRecent } from "@/components/MovimientosRecent";
 import { SupabaseConnector } from "@/components/SupabaseConnector";
 import { IAProactiva } from "@/components/IAProactiva";
 import { FloatingChatbot } from "@/components/FloatingChatbot";
+import { ConsultasIA } from "@/components/ConsultasIA";
+import { AIInsightsChat } from "@/components/AIInsightsChat";
 import { getSupabaseConfig, getSupabase } from "@/lib/supabase";
 import { Transaccion } from "@/lib/types";
 import { createClient } from "@/lib/supabase/client";
@@ -356,13 +358,22 @@ export default function Home() {
 
   // 4. Manejadores de Eventos
   const handleAddTransaccion = async (newTx: Omit<Transaccion, "id" | "fecha">) => {
-    if (!currentUser) return;
     const fresh: any = {
       ...newTx,
       id: "tx-" + Date.now() + "-" + Math.floor(Math.random() * 100),
       fecha: new Date().toISOString().split("T")[0],
-      user_id: currentUser.id
+      user_id: currentUser?.id ?? null
     };
+
+    // Modo demo sin usuario: guardar solo en estado local
+    if (!currentUser) {
+      setTransacciones((prev) => {
+        const updated = [fresh, ...prev];
+        try { localStorage.setItem("billeteria_transacciones", JSON.stringify(updated)); } catch {}
+        return updated;
+      });
+      return;
+    }
 
     const supabase = createClient();
     try {
@@ -380,6 +391,16 @@ export default function Home() {
   };
 
   const handleDeleteTransaccion = async (id: string) => {
+    // Modo demo sin usuario: borrar solo en estado local
+    if (!currentUser) {
+      setTransacciones((prev) => {
+        const updated = prev.filter((t) => t.id !== id);
+        try { localStorage.setItem("billeteria_transacciones", JSON.stringify(updated)); } catch {}
+        return updated;
+      });
+      return;
+    }
+
     const supabase = createClient();
     try {
       const { error } = await supabase
@@ -397,6 +418,15 @@ export default function Home() {
   };
 
   const handleResetToBaseline = async () => {
+    // Modo demo sin usuario: resetear solo en local
+    if (!currentUser) {
+      const confirmAction = window.confirm("¿Restaurar los movimientos de ejemplo?");
+      if (!confirmAction) return;
+      setTransacciones(baselineTransactions);
+      try { localStorage.removeItem("billeteria_transacciones"); } catch {}
+      return;
+    }
+
     const supabase = createClient();
     if (supabase && currentUser) {
       const confirmAction = window.confirm("¿Deseas restaurar la base de datos de Supabase con los movimientos baseline por defecto para tu usuario?");
@@ -488,15 +518,28 @@ export default function Home() {
           <button onClick={() => document.getElementById("ia-proactiva-panel")?.scrollIntoView({ behavior: "smooth" })} className="material-symbols-outlined text-[#bbcabf] hover:text-[#4edea3] transition-all active:scale-95 cursor-pointer bg-transparent border-none outline-none">notifications</button>
           <button onClick={() => setShowConnector(!showConnector)} className="material-symbols-outlined text-[#bbcabf] hover:text-[#4edea3] transition-all active:scale-95 cursor-pointer bg-transparent border-none outline-none">settings</button>
           <div className="flex items-center gap-2.5">
-            <div className="hidden lg:flex flex-col text-right">
-              <span className="text-xs text-white font-medium font-sans">
-                {currentUser?.email === "alvaroortegagimenez@gmail.com" ? "Álvaro Ortega" : (currentUser?.email?.split('@')[0] || "Usuario")}
-              </span>
-              <span className="text-[9px] text-[#bbcabf] font-mono">{currentUser?.email}</span>
-            </div>
-            <div className="w-10 h-10 rounded-full overflow-hidden border border-[#4edea3]/20 p-0.5">
-              <img alt="User Profile" className="w-full h-full object-cover rounded-full" src="https://lh3.googleusercontent.com/aida-public/AB6AXuA3DGAD9Iik_89igSf_o3_6ygfJUWZKRSiDSxV98nnNWBouDDzuSOzZBVwonDTFv0DbMbNj_K-fEYImg4aCaAPRFQ0kxhQy_udDq8l-QKTL-anLma7oYuB9Y2K_F2krwV4cLjD8KzTZ6xCzz5o99tLIr2sGEqaCtrDH05WWxmn29AYKpgFQOHGx2R2nyCDjoOoBS4IiTaETK1_tvvyRtg7LWtAJmmi51-UHmbOdB6hOoVMrLejpw3seBrBcKlWIPPle4EDjDyYCbypD"/>
-            </div>
+            {currentUser ? (
+              <>
+                <div className="hidden lg:flex flex-col text-right">
+                  <span className="text-xs text-white font-medium font-sans">
+                    {currentUser.email === "alvaroortegagimenez@gmail.com" ? "Álvaro Ortega" : (currentUser.email?.split('@')[0] || "Usuario")}
+                  </span>
+                  <span className="text-[9px] text-[#bbcabf] font-mono">{currentUser.email}</span>
+                </div>
+                <div className="w-10 h-10 rounded-full overflow-hidden border border-[#4edea3]/20 p-0.5">
+                  <img alt="User Profile" className="w-full h-full object-cover rounded-full" src="https://lh3.googleusercontent.com/aida-public/AB6AXuA3DGAD9Iik_89igSf_o3_6ygfJUWZKRSiDSxV98nnNWBouDDzuSOzZBVwonDTFv0DbMbNj_K-fEYImg4aCaAPRFQ0kxhQy_udDq8l-QKTL-anLma7oYuB9Y2K_F2krwV4cLjD8KzTZ6xCzz5o99tLIr2sGEqaCtrDH05WWxmn29AYKpgFQOHGx2R2nyCDjoOoBS4IiTaETK1_tvvyRtg7LWtAJmmi51-UHmbOdB6hOoVMrLejpw3seBrBcKlWIPPle4EDjDyYCbypD"/>
+                </div>
+              </>
+            ) : (
+              <div className="flex items-center gap-2">
+                <Link href="/auth/login" className="text-[#bbcabf] hover:text-white text-xs font-bold transition-colors">
+                  Iniciar Sesión
+                </Link>
+                <Link href="/auth/sign-up" className="bg-[#4edea3] hover:bg-[#3ec48e] text-[#002113] text-xs font-bold px-3 py-2 rounded-xl transition-all">
+                  Crear Cuenta
+                </Link>
+              </div>
+            )}
           </div>
         </div>
       </nav>
@@ -523,7 +566,7 @@ export default function Home() {
             <span className="material-symbols-outlined">receipt_long</span>
             <span className="font-medium text-label-md">Transactions</span>
           </button>
-          <button onClick={() => document.getElementById("ia-proactiva-panel")?.scrollIntoView({ behavior: "smooth" })} className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-[#bbcabf]/70 hover:bg-white/5 hover:text-white transition-all text-left cursor-pointer border-none outline-none">
+          <button onClick={() => document.getElementById("ai-insights-panel")?.scrollIntoView({ behavior: "smooth" })} className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-[#bbcabf]/70 hover:bg-white/5 hover:text-white transition-all text-left cursor-pointer border-none outline-none">
             <span className="material-symbols-outlined">psychology</span>
             <span className="font-medium text-label-md">AI Insights</span>
           </button>
@@ -547,6 +590,23 @@ export default function Home() {
 
       {/* Main Content */}
       <main className="md:pl-64 pt-24 min-h-screen px-4 md:px-8 pb-24 flex flex-col gap-8">
+
+        {/* Banner Modo Demo */}
+        {!currentUser && (
+          <div className="flex items-center justify-between gap-4 rounded-2xl bg-gradient-to-r from-amber-500/10 to-orange-500/10 border border-amber-500/30 px-5 py-3.5 text-sm animate-fadeIn">
+            <div className="flex items-center gap-3">
+              <span className="material-symbols-outlined text-amber-400 text-base">visibility</span>
+              <span className="text-amber-200 font-medium">
+                <span className="font-bold text-amber-300">Modo Demo</span> — Estás viendo datos de ejemplo. Los cambios se guardan en tu navegador.
+              </span>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <Link href="/auth/sign-up" className="bg-[#4edea3] hover:bg-[#3ec48e] text-[#002113] text-xs font-extrabold px-4 py-2 rounded-xl transition-all active:scale-95 whitespace-nowrap">
+                Crear Cuenta Gratis
+              </Link>
+            </div>
+          </div>
+        )}
         
         {/* Telegram IA Ingest Panel (Prominent) */}
         <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-[#1b2640] via-[#132d46] to-[#0f3c5f] border border-emerald-500/30 p-6 sm:p-8 shadow-[0_0_50px_rgba(78,222,163,0.15)] flex flex-col md:flex-row items-center justify-between gap-6 hover:border-emerald-500/50 transition-all duration-300 group">
@@ -654,6 +714,18 @@ export default function Home() {
           topeVariable={topeVariable}
         />
 
+        {/* AI Insights Chatbot (Make Webhook 2) */}
+        <AIInsightsChat
+          transacciones={transacciones}
+          dineroLiquido={dineroLiquido}
+          totalAhorros={totalAhorros}
+          totalInversiones={totalInversiones}
+          totalGastosFijos={totalGastosFijos}
+          totalGastosVariables={totalGastosVariables}
+          topeFijo={topeFijo}
+          topeVariable={topeVariable}
+        />
+
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
           {/* Budgets Section */}
           <div className="xl:col-span-1" id="collapsible-topes-container">
@@ -679,6 +751,18 @@ export default function Home() {
             />
           </div>
         </div>
+
+        {/* Consultas con IA */}
+        <ConsultasIA
+          transacciones={transacciones}
+          dineroLiquido={dineroLiquido}
+          totalAhorros={totalAhorros}
+          totalInversiones={totalInversiones}
+          totalGastosFijos={totalGastosFijos}
+          totalGastosVariables={totalGastosVariables}
+          topeFijo={topeFijo}
+          topeVariable={topeVariable}
+        />
       </main>
 
       {/* Bottom Nav for Mobile */}
@@ -701,7 +785,7 @@ export default function Home() {
           <span className="material-symbols-outlined">account_balance_wallet</span>
           <span className="text-[10px] font-bold">Budgets</span>
         </button>
-        <button onClick={() => document.getElementById("ia-proactiva-panel")?.scrollIntoView({ behavior: "smooth" })} className="flex flex-col items-center gap-1 text-[#bbcabf] bg-transparent border-none outline-none">
+        <button onClick={() => document.getElementById("ai-insights-panel")?.scrollIntoView({ behavior: "smooth" })} className="flex flex-col items-center gap-1 text-[#bbcabf] bg-transparent border-none outline-none">
           <span className="material-symbols-outlined">psychology</span>
           <span className="text-[10px] font-bold">AI</span>
         </button>
