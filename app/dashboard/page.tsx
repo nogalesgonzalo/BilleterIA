@@ -195,12 +195,36 @@ export default function Home() {
     let channel: any = null;
 
     const checkUserAndSubscribe = async () => {
-      const { data: { user }, error } = await supabase.auth.getUser();
+      let user: any = null;
+
+      try {
+        const { data, error } = await supabase.auth.getUser();
+        if (isMounted && !error && data?.user) {
+          user = data.user;
+        }
+      } catch (e) {
+        // Supabase no disponible — modo demo
+      }
+
       if (!isMounted) return;
-      if (error || !user) {
-        window.location.href = "/auth/login";
+
+      // ── MODO DEMO: Si no hay usuario autenticado, cargamos datos baseline ──
+      if (!user) {
+        const savedLocal = localStorage.getItem("billeteria_transacciones");
+        if (savedLocal) {
+          try { setTransacciones(JSON.parse(savedLocal)); } catch { setTransacciones(baselineTransactions); }
+        } else {
+          setTransacciones(baselineTransactions);
+        }
+        const savedTopeFijo = localStorage.getItem("billeteria_tope_fijo");
+        if (savedTopeFijo) setTopeFijo(Number(savedTopeFijo));
+        const savedTopeVariable = localStorage.getItem("billeteria_tope_variable");
+        if (savedTopeVariable) setTopeVariable(Number(savedTopeVariable));
+        setLoading(false);
         return;
       }
+
+      // ── MODO AUTENTICADO: Usuario con sesión activa ──
       setCurrentUser(user);
       setSupabaseConnected(true);
 
@@ -226,15 +250,17 @@ export default function Home() {
 
         if (fetchError) {
           console.error("Error al cargar transacciones de Supabase:", fetchError.message);
+          setTransacciones(baselineTransactions);
         } else if (data) {
           const normalized = data.map((t: any) => ({
             ...t,
             monto: Number(t.monto)
           }));
-          setTransacciones(normalized);
+          setTransacciones(normalized.length > 0 ? normalized : baselineTransactions);
         }
       } catch (err) {
         console.error("Excepción en la carga de Supabase:", err);
+        setTransacciones(baselineTransactions);
       } finally {
         if (isMounted) setLoading(false);
       }
